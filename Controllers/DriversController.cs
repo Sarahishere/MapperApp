@@ -1,8 +1,10 @@
 using AutoMapper;
+using MapperApp.Data;
 using MapperApp.Models;
 using MapperApp.Models.DTOs.Incoming;
 using MapperApp.Models.DTOs.Outgoing;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace MapperApp.Controllers;
 
@@ -12,19 +14,21 @@ public class DriversController : ControllerBase
 {
     private readonly ILogger<DriversController> _logger;
     private readonly IMapper _mapper;
-    private static List<Driver> drivers = new List<Driver>();
+    private readonly ApiDbContext _context;
 
-    public DriversController(ILogger<DriversController> logger,IMapper mapper)
+    public DriversController(ILogger<DriversController> logger,IMapper mapper,ApiDbContext context)
     {
         _logger = logger;
         _mapper = mapper;
+        _context = context;
 
     }
 
     //get
     [HttpGet]
-    public IActionResult GetAllDrivers()
+    public async Task<IActionResult> GetAllDrivers()
     {
+        var drivers = await _context.Drivers.ToListAsync();
         var allDrivers = drivers.Where(x => x.Status == 1).ToList();
         var outDrivers = _mapper.Map<IEnumerable<DriverForReturnDto>>(allDrivers);
         return Ok(outDrivers);
@@ -32,12 +36,13 @@ public class DriversController : ControllerBase
 
     //post
     [HttpPost]
-    public IActionResult CreateDriver(DriverForCreationDto data)
+    public async Task<IActionResult> CreateDriver(DriverForCreationDto data)
     {
         if(ModelState.IsValid)
         {
             var newDriver = _mapper.Map<Driver>(data);
-            drivers.Add(newDriver);
+            _context.Drivers.Add(newDriver);
+            await _context.SaveChangesAsync();
             var outDriver = _mapper.Map<DriverForReturnDto>(newDriver);
             
             _logger.LogInformation("New driver created");
@@ -48,9 +53,9 @@ public class DriversController : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public IActionResult GetDriver(Guid id)
+    public async Task<IActionResult> GetDriver(Guid id)
     {
-
+        var drivers = await _context.Drivers.ToListAsync();
         var item = drivers.FirstOrDefault(x => x.Id == id);
         var outDriver = _mapper.Map<DriverForReturnDto>(item);
         if(item ==null)
@@ -62,13 +67,14 @@ public class DriversController : ControllerBase
     }
 
     [HttpPut("{id}")]
-    public IActionResult UpdateDriver(Guid id, Driver data)
+    public async Task<IActionResult> UpdateDriver(Guid id, Driver data)
     {
         if (id != data.Id)
         {
             return BadRequest();
         }
 
+        var drivers = await _context.Drivers.ToListAsync();
         var existingDriver = drivers.FirstOrDefault(x => x.Id == data.Id);
         if (existingDriver == null)
           return NotFound();
@@ -77,6 +83,7 @@ public class DriversController : ControllerBase
         existingDriver.FirstName = data.FirstName;
         existingDriver.LastName = data.LastName;
         existingDriver.WorldChampionships = data.WorldChampionships;
+        await _context.SaveChangesAsync();
         _logger.LogInformation("Driver updated");
 
         return NoContent();
@@ -84,8 +91,9 @@ public class DriversController : ControllerBase
 
     [HttpDelete("{id}")]
     
-    public IActionResult DeleteDriver(Guid id)
+    public async Task<IActionResult> DeleteDriver(Guid id)
     {
+        var drivers = await _context.Drivers.ToListAsync();
         var item = drivers.FirstOrDefault(x => x.Id == id);
         if (item == null)
         {
@@ -93,6 +101,7 @@ public class DriversController : ControllerBase
         }
 
         item.Status = 0;
+        await _context.SaveChangesAsync();
         _logger.LogInformation("Driver deactivated");
         return NoContent();
     }
