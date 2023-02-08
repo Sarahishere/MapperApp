@@ -1,10 +1,9 @@
 using AutoMapper;
-using MapperApp.Data;
+using MapperApp.Core;
 using MapperApp.Models;
 using MapperApp.Models.DTOs.Incoming;
 using MapperApp.Models.DTOs.Outgoing;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace MapperApp.Controllers;
 
@@ -14,35 +13,34 @@ public class DriversController : ControllerBase
 {
     private readonly ILogger<DriversController> _logger;
     private readonly IMapper _mapper;
-    private readonly ApiDbContext _context;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public DriversController(ILogger<DriversController> logger,IMapper mapper,ApiDbContext context)
+    public DriversController(ILogger<DriversController> logger,IMapper mapper,IUnitOfWork unitOfWork)
     {
         _logger = logger;
         _mapper = mapper;
-        _context = context;
+        _unitOfWork = unitOfWork;
 
     }
 
     //get
     [HttpGet]
-    public async Task<IActionResult> GetAllDrivers()
+    public IActionResult GetAllDrivers()
     {
-        var drivers = await _context.Drivers.ToListAsync();
-        var allDrivers = drivers.Where(x => x.Status == 1).ToList();
+        var allDrivers = _unitOfWork.Drivers.All();
         var outDrivers = _mapper.Map<IEnumerable<DriverForReturnDto>>(allDrivers);
         return Ok(outDrivers);
     }
 
     //post
     [HttpPost]
-    public async Task<IActionResult> CreateDriver(DriverForCreationDto data)
+    public IActionResult CreateDriver(DriverForCreationDto data)
     {
         if(ModelState.IsValid)
         {
             var newDriver = _mapper.Map<Driver>(data);
-            _context.Drivers.Add(newDriver);
-            await _context.SaveChangesAsync();
+            _unitOfWork.Drivers.Add(newDriver);
+            _unitOfWork.CompleteChange();
             var outDriver = _mapper.Map<DriverForReturnDto>(newDriver);
             
             _logger.LogInformation("New driver created");
@@ -52,11 +50,11 @@ public class DriversController : ControllerBase
         return new JsonResult("Something went wrong"){StatusCode = 500};
     }
 
-    [HttpGet("{id}")]
-    public async Task<IActionResult> GetDriver(Guid id)
+    [HttpGet]
+    [Route("GetDriver")]
+    public  IActionResult GetDriver(Guid id)
     {
-        var drivers = await _context.Drivers.ToListAsync();
-        var item = drivers.FirstOrDefault(x => x.Id == id);
+        var item = _unitOfWork.Drivers.GetById(id);
         var outDriver = _mapper.Map<DriverForReturnDto>(item);
         if(item ==null)
         {
@@ -66,42 +64,37 @@ public class DriversController : ControllerBase
         return Ok(outDriver);
     }
 
-    [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateDriver(Guid id, Driver data)
+    [HttpPatch]
+    public IActionResult UpdateDriver( Driver data)
     {
-        if (id != data.Id)
-        {
-            return BadRequest();
-        }
-
-        var drivers = await _context.Drivers.ToListAsync();
-        var existingDriver = drivers.FirstOrDefault(x => x.Id == data.Id);
-        if (existingDriver == null)
-          return NotFound();
-         
-        existingDriver.DriverNumber = data.DriverNumber;
-        existingDriver.FirstName = data.FirstName;
-        existingDriver.LastName = data.LastName;
-        existingDriver.WorldChampionships = data.WorldChampionships;
-        await _context.SaveChangesAsync();
+        try{
+            var update =_unitOfWork.Drivers.Update(data);
+         _unitOfWork.CompleteChange();
         _logger.LogInformation("Driver updated");
 
         return NoContent();
+        }
+        catch(Exception e)
+        {
+            _logger.LogInformation($"{e}");
+            throw;
+        }
+         
     }
 
-    [HttpDelete("{id}")]
+    [HttpDelete]
+    [Route("DeleteDriver")]
     
-    public async Task<IActionResult> DeleteDriver(Guid id)
+    public IActionResult DeleteDriver(Guid id)
     {
-        var drivers = await _context.Drivers.ToListAsync();
-        var item = drivers.FirstOrDefault(x => x.Id == id);
+        var item = _unitOfWork.Drivers.GetById(id);
         if (item == null)
         {
             return NotFound();
         }
 
-        item.Status = 0;
-        await _context.SaveChangesAsync();
+        _unitOfWork.Drivers.Delete(item);
+        _unitOfWork.CompleteChange();
         _logger.LogInformation("Driver deactivated");
         return NoContent();
     }
